@@ -1,86 +1,142 @@
-import os
+from http.server import BaseHTTPRequestHandler
 import json
-import requests
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import os
+import urllib.request
+import urllib.parse
+import urllib.error
 
-# Inicializa a aplicação Flask
-app = Flask(__name__)
-CORS(app)  # Permite requisições de qualquer origem
+class handler(BaseHTTPRequestHandler ):
+    def do_POST(self):
+        try:
+            # Headers CORS
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
 
-@app.route('/api/gerar', methods=['POST'])
-def handler():
-    """
-    Esta função é o nosso "servidor". Ela recebe os pedidos do frontend,
-    contacta a API do Gemini e devolve a resposta.
-    """
-    # A Vercel executará esta função para todos os pedidos para /api/gerar.
+            # Verificar chave da API
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                response = {"error": "Chave da API do Gemini não configurada no servidor."}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
 
-    # Lê a chave da API da variável de ambiente configurada na Vercel.
-    # Este é o segredo que nunca é exposto ao público.
-    api_key = os.environ.get("GEMINI_API_KEY")
-
-    if not api_key:
-        return jsonify({"error": "Chave da API do Gemini não configurada no servidor."}), 500
-
-    try:
-        # Extrai os dados (prompt, isJsonMode) enviados pelo frontend.
-        data = request.get_json()
-        prompt = data.get("prompt")
-        is_json_mode = data.get("isJsonMode", False)
-
-        if not prompt:
-            return jsonify({"error": "Prompt não fornecido."}), 400
-
-        # Prepara o corpo do pedido para a API do Gemini.
-        gemini_payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 8192},
-        }
-        
-        gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-
-        # Faz a chamada para a API do Gemini a partir do servidor.
-        gemini_response = requests.post(gemini_api_url, json=gemini_payload)
-        
-        # Lança um erro se a resposta não for bem-sucedida.
-        gemini_response.raise_for_status()
-
-        gemini_data = gemini_response.json()
-        
-        candidate = gemini_data.get("candidates", [{}])[0]
-        text_part = candidate.get("content", {}).get("parts", [{}])[0].get("text")
-
-        if not text_part:
-            raise ValueError("A resposta da API do Gemini está vazia ou em formato inesperado.")
-
-        # Se o frontend pediu uma resposta em JSON, processamo-la aqui.
-        if is_json_mode:
-            json_start_index = text_part.find('{')
-            json_end_index = text_part.rfind('}')
+            # Ler dados da requisição
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                response = {"error": "Nenhum dado recebido."}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
             
-            if json_start_index == -1 or json_end_index == -1:
-                raise ValueError("Resposta da IA não continha um JSON válido.")
+            prompt = data.get("prompt", "").strip()
+            is_json_mode = data.get("isJsonMode", False)
 
-            json_string = text_part[json_start_index : json_end_index + 1]
-            final_response = jsonify(json.loads(json_string))
-        else:
-            # Se foi pedido texto, devolvemos um objeto com a propriedade 'text'.
-            final_response = jsonify({"text": text_part})
-        
-        # Envia a resposta bem-sucedida de volta para o frontend.
-        return final_response
+            if not prompt:
+                response = {"error": "Prompt não fornecido."}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
 
-    except requests.exceptions.HTTPError as http_err:
-        # Erro específico da chamada HTTP para a API Gemini
-        print(f"HTTP error occurred: {http_err}")
-        return jsonify({"error": f"Erro ao comunicar com a API do Gemini: {gemini_response.text}"}), 502
-    except Exception as e:
-        # Outros erros no nosso servidor.
-        print(f"An error occurred: {e}")
-        return jsonify({"error": str(e)}), 500
+            # Preparar dados para API do Gemini
+            gemini_payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"maxOutputTokens": 8192},
+            }
+            
+            # Fazer requisição para API do Gemini
+            gemini_api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+            
+            req = urllib.request.Request(
+                gemini_api_url,
+                data=json.dumps(gemini_payload ).encode('utf-8'),
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response_obj:
+                    if response_obj.status != 200:
+                        response = {"error": f"Erro da API Gemini: {response_obj.status}"}
+                        self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                        return
+                        
+                    gemini_response = json.loads(response_obj.read().decode('utf-8'))
+            except urllib.error.HTTPError as e:
+                response = {"error": f"Erro HTTP da API Gemini: {e.code}"}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
+            except urllib.error.URLError as e:
+                response = {"error": f"Erro de conexão com API Gemini: {str(e)}"}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
+            
+            # Processar resposta
+            candidates = gemini_response.get("candidates", [])
+            if not candidates:
+                response = {"error": "Nenhuma resposta da API Gemini"}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            candidate = candidates[0]
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+            
+            if not parts:
+                response = {"error": "Resposta vazia da API Gemini"}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
+                
+            text_part = parts[0].get("text", "")
 
-# Esta parte não é necessária para a Vercel, mas é útil para testes locais.
-if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=8000)
+            if not text_part:
+                response = {"error": "Texto vazio na resposta da API Gemini"}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                return
 
+            # Retornar resultado
+            if is_json_mode:
+                json_start_index = text_part.find('{')
+                json_end_index = text_part.rfind('}')
+                
+                if json_start_index == -1 or json_end_index == -1:
+                    response = {"error": "Resposta não contém JSON válido"}
+                    self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+                    return
+
+                json_string = text_part[json_start_index : json_end_index + 1]
+                try:
+                    result = json.loads(json_string)
+                    self.wfile.write(json.dumps(result, ensure_ascii=False).encode('utf-8'))
+                except json.JSONDecodeError:
+                    response = {"error": "JSON inválido na resposta da IA"}
+                    self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+            else:
+                response = {"text": text_part}
+                self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+
+        except Exception as e:
+            # Em caso de erro, sempre retornar JSON válido
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            response = {"error": f"Erro interno: {str(e)}"}
+            self.wfile.write(json.dumps(response, ensure_ascii=False).encode('utf-8'))
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        # Suprimir logs para evitar problemas no Vercel
+        pass
+
+    
+
+  
