@@ -129,7 +129,9 @@
                 - objetivos_especificos: Crie um array de 3 a 4 frases. Cada frase deve começar com um verbo de ação no infinitivo de ordem inferior na Taxonomia de Bloom (ex: Identificar, Descrever, Levantar, Caracterizar).
                 - justificativa: Texto detalhado (aprox. 250-300 palavras), estruturado em parágrafos claros, abordando: 1) Relevância Econômica, 2) Relevância Social, e 3) Relevância Educacional/Acadêmica.
                 - metodologia: Análise metodológica aprofundada (aprox. 250-300 palavras), detalhando: 1) Abordagem e Delineamento, 2) População e Amostra, 3) Técnicas e Instrumentos de Coleta, 4) Procedimentos de Análise de Dados, e 5) Considerações Éticas.
-                - principais_pesquisadores: Array de 5 objetos de pesquisadores internacionais. Cada objeto deve ter "nome" (string) e "obras_principais" (array de 2 a 3 strings com a referência bibliográfica COMPLETA da obra em formato APA, com publicação nos últimos 5 anos).
+                - principais_pesquisadores: Array de 5 objetos de pesquisadores internacionais. Cada objeto deve ter "nome" (string) e "obras_principais" (array de 2 a 3 strings com a referência bibliográfica COMPLETA da obra em formato APA, com publicação OBRIGATORIAMENTE entre 2022 e 2025).
+                
+                IMPORTANTE: As obras dos pesquisadores DEVEM ser dos anos 2022, 2023, 2024 ou 2025. Não aceite anos anteriores.
                 
                 A resposta deve ser apenas o JSON puro.
             `;
@@ -177,7 +179,7 @@
                             type="text" 
                             id="refine-input-${key}" 
                             class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
-                            placeholder="Ex: Torne mais conciso, adicione um exemplo..."
+                            placeholder="${getPlaceholderForSection(key)}"
                         >
                         <button 
                             id="refine-btn-${key}" 
@@ -197,6 +199,17 @@
             div.querySelector(`#refine-btn-${key}`).addEventListener('click', (e) => handleRefine(e.currentTarget, key));
 
             return div;
+        }
+
+        function getPlaceholderForSection(key) {
+            const placeholders = {
+                objetivo_geral: "Ex: Torne mais específico, mude o verbo...",
+                objetivos_especificos: "Ex: Adicione mais um objetivo, torne mais claro...",
+                justificativa: "Ex: Enfatize mais o aspecto social, seja mais conciso...",
+                metodologia: "Ex: Detalhe mais a coleta de dados, simplifique...",
+                principais_pesquisadores: "Ex: Inclua pesquisadores de 2024-2025, foque em IA..."
+            };
+            return placeholders[key] || "Ex: Torne mais conciso, adicione um exemplo...";
         }
 
         function updateSectionContent(element, type, data) {
@@ -264,50 +277,84 @@
             
             iniciarCarregamento(false, button);
 
-            const refinePrompt = `
-                Aja como um orientador acadêmico. O problema de pesquisa original é: "${problema}".
-                A seção atual de "${sections[key].title}" contém o seguinte texto: "${currentText}".
-                Refine este texto seguindo esta instrução: "${instruction}".
-                
-                IMPORTANTE: Responda APENAS com o novo texto refinado para esta seção. 
-                - Se for uma lista de objetivos específicos, retorne cada item em uma linha separada, sem numeração ou marcadores.
-                - Se for um parágrafo, retorne o texto corrido.
-                - Não inclua JSON, não inclua explicações extras, apenas o conteúdo refinado.
-            `;
+            let refinePrompt = '';
+            
+            if (sections[key].type === 'researchers') {
+                refinePrompt = `
+                    Aja como um orientador acadêmico. O problema de pesquisa original é: "${problema}".
+                    A seção atual de pesquisadores contém: "${currentText}".
+                    Refine esta lista seguindo esta instrução: "${instruction}".
+                    
+                    IMPORTANTE: 
+                    - Retorne APENAS uma lista de 5 pesquisadores em formato JSON
+                    - Cada pesquisador deve ter "nome" e "obras_principais" 
+                    - As obras DEVEM ser dos anos 2022, 2023, 2024 ou 2025
+                    - Use referências APA completas
+                    - Responda apenas com o array JSON dos pesquisadores
+                    
+                    Formato esperado:
+                    [
+                        {
+                            "nome": "Nome do Pesquisador",
+                            "obras_principais": ["Referência APA 1 (2024)", "Referência APA 2 (2023)"]
+                        }
+                    ]
+                `;
+            } else {
+                refinePrompt = `
+                    Aja como um orientador acadêmico. O problema de pesquisa original é: "${problema}".
+                    A seção atual de "${sections[key].title}" contém o seguinte texto: "${currentText}".
+                    Refine este texto seguindo esta instrução: "${instruction}".
+                    
+                    IMPORTANTE: Responda APENAS com o novo texto refinado para esta seção. 
+                    - Se for uma lista de objetivos específicos, retorne cada item em uma linha separada, sem numeração ou marcadores.
+                    - Se for um parágrafo, retorne o texto corrido.
+                    - Não inclua JSON, não inclua explicações extras, apenas o conteúdo refinado.
+                `;
+            }
 
             try {
-                const newContent = await callBackendAPI({ prompt: refinePrompt, isJsonMode: false });
+                const newContent = await callBackendAPI({ 
+                    prompt: refinePrompt, 
+                    isJsonMode: sections[key].type === 'researchers' 
+                });
                 
-                if (!newContent || !newContent.text) {
+                if (!newContent) {
                     throw new Error('Resposta vazia do servidor');
                 }
                 
-                let refinedText = newContent.text.trim();
-                
                 // Processar baseado no tipo de seção
                 if (sections[key].type === 'list') {
-                    // Para listas, dividir por linhas e limpar
+                    if (!newContent.text) {
+                        throw new Error('Resposta inválida para lista');
+                    }
+                    let refinedText = newContent.text.trim();
                     let items = refinedText.split('\n')
                         .map(item => item.trim())
                         .filter(item => item.length > 0)
                         .map(item => item.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, ''));
                     
                     if (items.length === 0) {
-                        // Se não conseguiu dividir por linhas, tentar dividir por pontos
                         items = refinedText.split('.')
                             .map(item => item.trim())
-                            .filter(item => item.length > 10); // Filtrar itens muito pequenos
+                            .filter(item => item.length > 10);
                     }
                     
                     updateSectionContent(contentElement, 'list', items);
                 } else if (sections[key].type === 'researchers') {
-                    // Para pesquisadores, manter o formato original (não refinável de forma simples)
-                    errorDiv.textContent = 'A seção de pesquisadores não pode ser refinada. Use o botão de gerar nova proposta.';
-                    errorDiv.classList.remove('hidden');
-                    return;
+                    // Para pesquisadores, a resposta já vem como array JSON
+                    let researchers = newContent;
+                    if (Array.isArray(researchers)) {
+                        updateSectionContent(contentElement, 'researchers', researchers);
+                    } else {
+                        throw new Error('Formato inválido para pesquisadores');
+                    }
                 } else {
                     // Para parágrafos
-                    updateSectionContent(contentElement, 'paragraph', refinedText);
+                    if (!newContent.text) {
+                        throw new Error('Resposta inválida para parágrafo');
+                    }
+                    updateSectionContent(contentElement, 'paragraph', newContent.text.trim());
                 }
                 
                 instructionInput.value = '';
