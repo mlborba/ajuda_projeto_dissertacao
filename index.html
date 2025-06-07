@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apoio a Construção da Dissertação</title>
+    <!-- Incluindo Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Incluindo a fonte Inter do Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Incluindo a biblioteca de ícones Lucide -->
+    <script src="https://unpkg.com/lucide-react@0.292.0/dist/lucide.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #resultado-container { transition: opacity 0.5s ease-in-out; }
+        .refine-loader { border: 2px solid #f3f3f3; border-top: 2px solid #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        .copy-button, .refine-button { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <main class="w-full max-w-4xl bg-white rounded-2xl shadow-lg p-6 md:p-10 space-y-8">
+        <!-- Cabeçalho da Aplicação -->
+        <div class="text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Apoio a Construção da Dissertação</h1>
+            <p class="mt-2 text-md text-gray-600">Insira seu problema de pesquisa e deixe a IA construir uma proposta inicial para você.</p>
+        </div>
+
+        <!-- Área de Input Principal -->
+        <div class="space-y-6">
+            <div>
+                <label for="problema-pesquisa" class="block text-sm font-medium text-gray-700 mb-1">Problema de Pesquisa</label>
+                <textarea id="problema-pesquisa" rows="4" class="w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Ex: De que forma a gamificação em ambientes corporativos pode influenciar o engajamento e a produtividade de equipes de desenvolvimento de software?"></textarea>
+            </div>
+            <div class="text-center">
+                <button id="gerar-btn" class="w-full sm:w-auto bg-blue-600 text-white font-semibold py-3 px-8 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">
+                    Gerar Proposta Completa
+                </button>
+            </div>
+        </div>
+
+        <!-- Feedback Global -->
+        <div id="feedback-container" class="text-center py-4">
+            <div id="loader" class="loader mx-auto hidden"></div>
+            <p id="error-message" class="text-red-600 font-medium hidden"></p>
+        </div>
+
+        <!-- Container de Resultados -->
+        <div id="resultado-container" class="space-y-6 opacity-0">
+            <!-- Seções Geradas Dinamicamente -->
+        </div>
+    </main>
+
+    <footer class="w-full max-w-4xl text-center py-4 mt-8">
+        <p class="text-sm text-gray-500">Mestrado em Sistemas Produtivos - PPGSP</p>
+    </footer>
+
+    <script>
+        const gerarBtn = document.getElementById('gerar-btn');
+        const problemaInput = document.getElementById('problema-pesquisa');
+        const loader = document.getElementById('loader');
+        const errorMessage = document.getElementById('error-message');
+        const resultadoContainer = document.getElementById('resultado-container');
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            gerarBtn.addEventListener('click', gerarProjeto);
+        });
+
+        const sections = {
+            objetivo_geral: { title: "🎯 Objetivo Geral", type: "paragraph" },
+            objetivos_especificos: { title: "📌 Objetivos Específicos", type: "list" },
+            justificativa: { title: "💡 Justificativa", type: "paragraph" },
+            metodologia: { title: "🔬 Metodologia Aplicável", type: "paragraph" },
+            principais_pesquisadores: { title: "📚 Principais Pesquisadores e Obras", type: "researchers" }
+        };
+        
+        async function gerarProjeto() {
+            const problema = problemaInput.value.trim();
+
+            if (!problema) {
+                exibirErro("Por favor, preencha o problema de pesquisa.");
+                return;
+            }
+
+            iniciarCarregamento(true);
+
+            const prompt = `
+                Aja como um orientador acadêmico sênior, especialista em metodologia científica e na Taxonomia de Bloom. Baseado no seguinte problema de pesquisa, crie os elementos centrais de um projeto de pesquisa, seguindo as melhores práticas científicas.
+                Problema de Pesquisa: "${problema}"
+                Responda estritamente com um único objeto JSON com as seguintes chaves: "objetivo_geral", "objetivos_especificos", "justificativa", "metodologia", "principais_pesquisadores".
+                - objetivo_geral: Elabore UMA frase concisa. Comece com um verbo de ação no infinitivo de ordem superior na Taxonomia de Bloom (ex: Analisar, Avaliar, Comparar, Propor, Desenvolver).
+                - objetivos_especificos: Crie um array de 3 a 4 frases. Cada frase deve começar com um verbo de ação no infinitivo de ordem inferior na Taxonomia de Bloom (ex: Identificar, Descrever, Levantar, Caracterizar).
+                - justificativa: Texto detalhado (aprox. 250-300 palavras), estruturado em parágrafos claros, abordando: 1) Relevância Econômica, 2) Relevância Social, e 3) Relevância Educacional/Acadêmica.
+                - metodologia: Análise metodológica aprofundada (aprox. 250-300 palavras), detalhando: 1) Abordagem e Delineamento, 2) População e Amostra, 3) Técnicas e Instrumentos de Coleta, 4) Procedimentos de Análise de Dados, e 5) Considerações Éticas.
+                - principais_pesquisadores: Array de 5 objetos de pesquisadores internacionais. Cada objeto deve ter "nome" (string) e "obras_principais" (array de 2 a 3 strings com a referência bibliográfica COMPLETA da obra em formato APA, com publicação nos últimos 5 anos).
+                A resposta deve ser apenas o JSON puro.
+            `;
+            
+            try {
+                const projeto = await callBackendAPI({ prompt, isJsonMode: true });
+                exibirResultados(projeto);
+            } catch (error) {
+                exibirErro(`Ocorreu um erro na geração inicial: ${error.message}`);
+            } finally {
+                pararCarregamento(true);
+            }
+        }
+
+        function exibirResultados(projeto) {
+            resultadoContainer.innerHTML = ''; 
+            Object.keys(sections).forEach(key => {
+                if (projeto[key]) {
+                    const sectionData = sections[key];
+                    const sectionElement = createSectionElement(key, sectionData.title, sectionData.type, projeto[key]);
+                    resultadoContainer.appendChild(sectionElement);
+                }
+            });
+            resultadoContainer.style.opacity = '1';
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function createSectionElement(key, title, type, data) {
+            const div = document.createElement('div');
+            div.className = 'bg-gray-50 p-6 rounded-xl border border-gray-200';
+            div.innerHTML = `
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-xl font-semibold text-gray-800">${title}</h2>
+                    <button id="copy-${key}" class="copy-button p-2 rounded-md text-gray-500 hover:bg-gray-200 hover:text-gray-800">
+                        <i data-lucide="copy" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div id="content-${key}"></div>
+                <div class="mt-4 pt-4 border-t border-gray-200">
+                    <label for="refine-input-${key}" class="text-sm font-medium text-gray-600">Refinar esta seção:</label>
+                    <div class="flex items-center space-x-2 mt-1">
+                        <input type="text" id="refine-input-${key}" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm text-sm" placeholder="Ex: Torne mais conciso, adicione um exemplo...">
+                        <button id="refine-btn-${key}" class="refine-button bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-gray-700 flex items-center justify-center">
+                            <span class="refine-text">Refinar</span>
+                            <div class="refine-loader hidden ml-2"></div>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            updateSectionContent(div.querySelector(`#content-${key}`), type, data);
+            
+            div.querySelector(`#copy-${key}`).addEventListener('click', (e) => handleCopy(e.currentTarget, `content-${key}`));
+            div.querySelector(`#refine-btn-${key}`).addEventListener('click', (e) => handleRefine(e.currentTarget, key));
+
+            return div;
+        }
+
+        function updateSectionContent(element, type, data) {
+             if (type === 'paragraph') {
+                element.innerHTML = `<p class="text-gray-700 leading-relaxed whitespace-pre-wrap">${data}</p>`;
+            } else if (type === 'list') {
+                element.innerHTML = `<ul class="list-disc list-inside space-y-2 text-gray-700 leading-relaxed">${data.map(item => `<li>${item}</li>`).join('')}</ul>`;
+            } else if (type === 'researchers') {
+                element.innerHTML = data.map(p => `
+                    <div class="mb-3">
+                        <p class="font-semibold text-gray-800">${p.nome}</p>
+                        <ul class="list-disc list-inside text-sm text-gray-600 mt-1">${p.obras_principais.map(o => `<li>${o}</li>`).join('')}</ul>
+                    </div>
+                `).join('');
+            }
+        }
+        
+        async function handleCopy(button, contentId) {
+            const contentElement = document.getElementById(contentId);
+            const textToCopy = contentElement.innerText;
+            
+            const textArea = document.createElement("textarea");
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+
+            button.innerHTML = '<i data-lucide="check" class="w-5 h-5 text-green-600"></i>';
+            if (window.lucide) lucide.createIcons();
+            setTimeout(() => {
+                button.innerHTML = '<i data-lucide="copy" class="w-5 h-5"></i>';
+                if (window.lucide) lucide.createIcons();
+            }, 2000);
+        }
+
+        async function handleRefine(button, key) {
+            const instructionInput = document.getElementById(`refine-input-${key}`);
+            const instruction = instructionInput.value.trim();
+            if (!instruction) return;
+
+            const contentElement = document.getElementById(`content-${key}`);
+            const currentText = contentElement.innerText;
+            const problema = problemaInput.value.trim();
+            
+            iniciarCarregamento(false, button);
+
+            const refinePrompt = `
+                Aja como um orientador acadêmico. O problema de pesquisa original é: "${problema}".
+                A seção atual de "${sections[key].title}" contém o seguinte texto: "${currentText}".
+                Refine este texto seguindo esta instrução: "${instruction}".
+                Responda APENAS com o novo texto refinado para esta seção. A resposta não deve ser em JSON, apenas o texto puro.
+            `;
+
+            try {
+                const newContent = await callBackendAPI({ prompt: refinePrompt, isJsonMode: false });
+                
+                if (sections[key].type === 'list') {
+                    updateSectionContent(contentElement, 'list', newContent.text.split('\n').filter(Boolean).map(item => item.replace(/^- /, '')));
+                } else {
+                    updateSectionContent(contentElement, 'paragraph', newContent.text);
+                }
+                instructionInput.value = '';
+
+            } catch (error) {
+                 exibirErro(`Erro ao refinar: ${error.message}`, button.parentElement.parentElement);
+            } finally {
+                pararCarregamento(false, button);
+            }
+        }
+
+        async function callBackendAPI(data) {
+            const response = await fetch('/api/gerar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Erro desconhecido no servidor');
+            }
+
+            return await response.json();
+        }
+
+        function iniciarCarregamento(isGlobal, button = null) {
+            if (isGlobal) {
+                loader.classList.remove('hidden');
+                gerarBtn.disabled = true;
+                gerarBtn.textContent = 'Gerando...';
+            } else if (button) {
+                const refineText = button.querySelector('.refine-text');
+                const refineLoader = button.querySelector('.refine-loader');
+                refineText.classList.add('hidden');
+                refineLoader.classList.remove('hidden');
+                button.disabled = true;
+            }
+            errorMessage.classList.add('hidden');
+        }
+
+        function pararCarregamento(isGlobal, button = null) {
+            if (isGlobal) {
+                loader.classList.add('hidden');
+                gerarBtn.disabled = false;
+                gerarBtn.textContent = 'Gerar Proposta Completa';
+            } else if (button) {
+                const refineText = button.querySelector('.refine-text');
+                const refineLoader = button.querySelector('.refine-loader');
+                refineText.classList.remove('hidden');
+                refineLoader.classList.add('hidden');
+                button.disabled = false;
+            }
+        }
+
+        function exibirErro(mensagem, container = null) {
+            if (container) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'text-red-600 text-sm mt-2';
+                errorDiv.textContent = mensagem;
+                container.appendChild(errorDiv);
+                setTimeout(() => errorDiv.remove(), 5000);
+            } else {
+                errorMessage.textContent = mensagem;
+                errorMessage.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
+
