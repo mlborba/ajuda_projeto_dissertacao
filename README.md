@@ -24,11 +24,18 @@ Uma aplicação web que utiliza IA para auxiliar na criação de propostas de di
    ```bash
    pip install -r requirements.txt
    ```
-3. Configure a variável de ambiente:
+3. Configure as variáveis de ambiente. Você pode criar um arquivo `.env` a partir do
+   modelo disponibilizado:
+   ```bash
+   cp .env.example .env
+   # edite o arquivo para inserir a sua chave
+   ```
+   ou exportar manualmente antes de executar a aplicação:
    ```bash
    export GEMINI_API_KEY="sua_chave_api_aqui"
+   # Opcional: export GEMINI_MODEL="gemini-2.0-pro"
    ```
-4. Execute a aplicação:
+4. Execute a aplicação Flask:
    ```bash
    python api/gerar.py
    ```
